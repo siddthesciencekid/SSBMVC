@@ -12,8 +12,12 @@ orb = cv2.ORB_create()
 kp1, des1 = orb.detectAndCompute(GO_TEMPLATE, None)
 MIN_MATCH_COUNT = 2
 
-upper_left = (0, 550)
-bottom_right = (500, 600)
+# ROI FRAME POSITIONS
+STOCK_ROI_UPPER_LEFT = (0, 550)
+STOCK_ROI_BOTTOM_RIGHT = (500, 600)
+
+PLAYER1_NAME_ROI_UPPER_LEFT = (100, 0)
+PLAYER1_NAME_ROI_BOTTOM_RIGHT = (225, 40)
 
 def main():
 
@@ -34,6 +38,8 @@ def main():
     time_start = 0
     char1 = ''
     char2 = ''
+    char1_stock_count = 0
+    char2_stock_count = 0
 
     print('FRAME\tPLAYER 1 STOCK COUNT\tPLAYER 2 STOCK COUNT')
     while True:
@@ -85,8 +91,10 @@ def main():
                 #cv2.imshow('Detected', frame)
                 #cv2.waitKey(0)
 
+            # Every 10 frames analyze the frame and print statistics (stock count, in-game timer and percentage)
             if match_has_started and num_frames % 10 == 0:
-                compute_and_print_num_stocks('data/characters/fox-capture.png', 'data/characters/pikachu-capture.png', frame, num_frames)
+                char1_stock_count, char2_stock_count = compute_num_stocks('data/characters/fox-capture.png', 'data/characters/pikachu-capture.png', frame)
+                print(str(num_frames)  + 's\t' + str(char1_stock_count) + '\t' + str(char2_stock_count))
 
 
             cv2.imshow('frame', frame)
@@ -116,21 +124,22 @@ def compute_ORB_feature_match_for_start(frame):
             good.append([m])
     return good
 
-def compute_and_print_num_stocks(player1_stock_image, player2_stock_image, frame, frame_num):
-    frame = frame[upper_left[1]: bottom_right[1], upper_left[0]: bottom_right[0]]
+def compute_num_stocks(player1_stock_image, player2_stock_image, frame):
+    frame = frame[STOCK_ROI_UPPER_LEFT [1]: STOCK_ROI_BOTTOM_RIGHT[1], STOCK_ROI_UPPER_LEFT [0]: STOCK_ROI_BOTTOM_RIGHT[0]]
 
     character_template1 = cv2.imread(player1_stock_image, 1)
     character_template1 = cv2.cvtColor(character_template1, cv2.COLOR_BGR2GRAY)
-
+    w1, h1 = character_template1.shape[::-1]
     character_template2 = cv2.imread(player2_stock_image, 1)
     character_template2 = cv2.cvtColor(character_template2, cv2.COLOR_BGR2GRAY)
+    w2, h2 = character_template2.shape[::-1]
 
     frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
 
     res1 = cv2.matchTemplate(frame, character_template1, cv2.TM_CCOEFF_NORMED)
     res2 = cv2.matchTemplate(frame, character_template2, cv2.TM_CCOEFF_NORMED)
 
-    # Specify a threshold
+    # Specify a threshold for which the template should match the frame
     threshold = 0.80
 
     # Store the coordinates of matched area in a numpy array
@@ -139,7 +148,7 @@ def compute_and_print_num_stocks(player1_stock_image, player2_stock_image, frame
 
     player1_found = set()
     player2_found = set()
-    sensitivity = 43
+    sensitivity = (w2 * 2) - 1
 
     for pt in zip(*loc1[::-1]):
         player1_found.add((round(pt[0] / sensitivity), round(pt[1] / sensitivity)))
@@ -147,7 +156,7 @@ def compute_and_print_num_stocks(player1_stock_image, player2_stock_image, frame
     for pt in zip(*loc2[::-1]):
         player2_found.add((round(pt[0] / sensitivity), round(pt[1] / sensitivity)))
 
-    print(str(frame_num) + '\t' + str(len(player1_found)) + '\t' + str(len(player2_found)))
+    return len(player1_found), len(player2_found)
 
 
 
