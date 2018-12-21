@@ -33,7 +33,7 @@ PLAYER1_STOCK_ROI_BOTTOM_RIGHT = (195, 600)
 PLAYER2_STOCK_ROI_UPPER_LEFT = (250, 550)
 PLAYER2_STOCK_ROI_BOTTOM_RIGHT = (425, 600)
 
-# Ignore template matching on the following image since this a screen grab of pikachu being played
+# Ignore template matching on the following image since these are just screen grabs
 # For the template matching algorithm I was able to identify the pikachu from the downloaded stock icons
 # Recognizing fox however was much trickier.
 
@@ -42,7 +42,7 @@ PLAYER2_STOCK_ROI_BOTTOM_RIGHT = (425, 600)
 # Consistency would be the way to go moving forward
 IGNORE_FILENAMES = ['fox-capture.PNG', 'pikachu-capture.PNG']
 
-# Character File Name mapped to Character Varient Names
+# Character File Name mapped to Character Variant Names
 # In a full version we would have all the mappings here :)
 CHARACTER_FILENAME_TO_NAME_MAP = {'fox-green.png': 'Green Fox', 'pikachu-blue.png': 'Blue Party Hat Pikachu'}
 
@@ -175,8 +175,6 @@ def compute_player_character(frame, upper_left, bottom_right, use_canny = False)
     for filename in os.listdir('data/characters'):
         if not IGNORE_FILENAMES.__contains__(filename):
             character_template = cv2.imread('data/characters/' + filename, 1)
-
-
             character_template = cv2.resize(character_template, (0, 0), fx=1.41, fy=1.41)
             character_template = cv2.blur(character_template, (6, 6))
 
