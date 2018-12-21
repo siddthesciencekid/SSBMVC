@@ -1,5 +1,6 @@
 data/SSBM_test.mp4
-.idea/*
+__pycache__
 *.pyc
-.idea/workspace.xml
+.idea/misc.xml
+.idea/SSBMCV.iml
 .idea/workspace.xml

@@ -7,17 +7,44 @@ from matplotlib import pyplot as plt
 from download_yt import download_youtube_video
 
 VIDEO_FILE_NAME = 'SSBM_test.mp4'
-GO_TEMPLATE = cv2.imread('data/GO.jpg', 1)
+
 orb = cv2.ORB_create()
+
+
+# GO_MATCHING
+GO_TEMPLATE = cv2.imread('data/GO.jpg', 1)
 kp1, des1 = orb.detectAndCompute(GO_TEMPLATE, None)
-MIN_MATCH_COUNT = 2
+GO_FEATURE_MIN_MATCH_COUNT = 2
+
 
 # ROI FRAME POSITIONS
+# Ideally these frame positions would be computed from some other datapoint instead of being hardcoded
+# I thought about using the size of the GO! detected at that start to generalize the region of interests
+# but left that to a future task to get things working for now
 STOCK_ROI_UPPER_LEFT = (0, 550)
 STOCK_ROI_BOTTOM_RIGHT = (500, 600)
 
 PLAYER1_NAME_ROI_UPPER_LEFT = (100, 0)
 PLAYER1_NAME_ROI_BOTTOM_RIGHT = (225, 40)
+
+PLAYER1_STOCK_ROI_UPPER_LEFT = (25, 550)
+PLAYER1_STOCK_ROI_BOTTOM_RIGHT = (195, 600)
+
+PLAYER2_STOCK_ROI_UPPER_LEFT = (250, 550)
+PLAYER2_STOCK_ROI_BOTTOM_RIGHT = (425, 600)
+
+# Ignore template matching on the following image since this a screen grab of pikachu being played
+# For the template matching algorithm I was able to identify the pikachu from the downloaded stock icons
+# Recognizing fox however was much trickier.
+
+# If I just use edge detection with cv2.Canny I'm able to match fox-green but not pikachu...
+# For now I have it set to use cv2.Canny with fox and pure template matching with pikachu
+# Consistency would be the way to go moving forward
+IGNORE_FILENAMES = ['fox-capture.PNG', 'pikachu-capture.PNG']
+
+# Character File Name mapped to Character Varient Names
+# In a full version we would have all the mappings here :)
+CHARACTER_FILENAME_TO_NAME_MAP = {'fox-green.png': 'Green Fox', 'pikachu-blue.png': 'Blue Party Hat Pikachu'}
 
 def main():
 
@@ -34,14 +61,13 @@ def main():
     # Datapoints
     num_frames = 0
     match_has_started = False
-    max_go_matches = 0
     time_start = 0
     char1 = ''
     char2 = ''
     char1_stock_count = 0
     char2_stock_count = 0
 
-    print('FRAME\tPLAYER 1 STOCK COUNT\tPLAYER 2 STOCK COUNT')
+
     while True:
         # Capture frame-by-frame
         ret, frame = cap.read()
@@ -51,50 +77,30 @@ def main():
             # Operations on the frame start here
 
             # Use feature matching with ORB to get start match time
-            good = compute_ORB_feature_match_for_start(frame)
-            if len(good) > MIN_MATCH_COUNT and len(good) > max_go_matches:
+            go_feature_matches = 0
+            if not match_has_started:
+                go_feature_matches = len(compute_ORB_feature_match_for_start(frame))
+            else:
+                go_feature_matches = 0
+            if go_feature_matches > GO_FEATURE_MIN_MATCH_COUNT:
                 match_has_started = True
-                max_go_matches = len(good)
                 time_start = num_frames / float(fps)
+                char1_filename= compute_player_character(frame, PLAYER1_STOCK_ROI_UPPER_LEFT, PLAYER1_STOCK_ROI_BOTTOM_RIGHT, True)
+                print('Player 1 Character: ' + CHARACTER_FILENAME_TO_NAME_MAP[char1_filename])
 
-                frame = frame[upper_left[1]: bottom_right[1], upper_left[0]: bottom_right[0]]
-                cv2.imshow('frame', frame)
-                cv2.waitKey(0)
-
-
-
-                # Once the match starts we can use the current frame to determine the characters being played
-                # for filename in os.listdir('data/characters'):
-                    # print(filename)
-                # character_template = cv2.imread('data/characters/pikachu-capture.png', 1)
-                # character_template = cv2.cvtColor(character_template, cv2.COLOR_BGR2GRAY)
-                # w, h = character_template.shape[::-1]
-                # frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-                #
-                # res = cv2.matchTemplate(frame, character_template, cv2.TM_CCOEFF_NORMED)
-                #
-                # # Specify a threshold
-                # threshold = 0.7
-                #
-                # # Store the coordinates of matched area in a numpy array
-                # loc = np.where(res >= threshold)
-                #
-                # found = set()
-                # # Draw a rectangle around the matched region.
-                # for pt in zip(*loc[::-1]):
-                #     cv2.rectangle(frame, pt, (pt[0] + w, pt[1] + h), (0, 255, 255), 2)
-                #     sensitivity = 43
-                #     found.add((round(pt[0] / sensitivity), round(pt[1] / sensitivity)))
+                char2_filename = compute_player_character(frame, PLAYER2_STOCK_ROI_UPPER_LEFT, PLAYER2_STOCK_ROI_BOTTOM_RIGHT)
+                print('Player 2 Character: ' + CHARACTER_FILENAME_TO_NAME_MAP[char2_filename])
 
 
+                print('game start time: ' + str(time_start) + 's')
+                print('FRAME\tPLAYER 1 STOCK COUNT\tPLAYER 2 STOCK COUNT')
 
-                #cv2.imshow('Detected', frame)
-                #cv2.waitKey(0)
+
 
             # Every 10 frames analyze the frame and print statistics (stock count, in-game timer and percentage)
             if match_has_started and num_frames % 10 == 0:
                 char1_stock_count, char2_stock_count = compute_num_stocks('data/characters/fox-capture.png', 'data/characters/pikachu-capture.png', frame)
-                print(str(num_frames)  + 's\t' + str(char1_stock_count) + '\t' + str(char2_stock_count))
+                print(str(num_frames) + '\t' + str(char1_stock_count) + '\t' + str(char2_stock_count))
 
 
             cv2.imshow('frame', frame)
@@ -105,7 +111,6 @@ def main():
     # When everything done, release the capture
     cap.release()
     cv2.destroyAllWindows()
-    print('game start time: ' + str(time_start) + 's')
 
 
 
@@ -158,6 +163,35 @@ def compute_num_stocks(player1_stock_image, player2_stock_image, frame):
 
     return len(player1_found), len(player2_found)
 
+def compute_player_character(frame, upper_left, bottom_right, use_canny = False):
+    frame = frame[upper_left[1]: bottom_right[1], upper_left[0]: bottom_right[0]]
+
+    if use_canny:
+        frame = cv2.Canny(frame, 50, 200)
+
+    max_match = 0
+    max_character = ''
+    # Once the match starts we can use the current frame to determine the characters being played
+    for filename in os.listdir('data/characters'):
+        if not IGNORE_FILENAMES.__contains__(filename):
+            character_template = cv2.imread('data/characters/' + filename, 1)
+
+
+            character_template = cv2.resize(character_template, (0, 0), fx=1.41, fy=1.41)
+            character_template = cv2.blur(character_template, (6, 6))
+
+            if use_canny:
+                character_template = cv2.Canny(character_template, 50, 200)
+
+
+
+            res = cv2.matchTemplate(frame, character_template, cv2.TM_CCOEFF_NORMED)
+
+            min_val, max_val, min_loc, max_loc = cv2.minMaxLoc(res)
+            if max_val > max_match:
+                max_match = max_val
+                max_character = filename
+    return max_character
 
 
 if __name__ == "__main__":
