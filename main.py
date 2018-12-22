@@ -2,8 +2,7 @@
 import cv2
 import os.path
 import numpy as np
-import imutils
-from matplotlib import pyplot as plt
+import pytesseract
 from download_yt import download_youtube_video
 
 VIDEO_FILE_NAME = 'SSBM_test.mp4'
@@ -25,7 +24,10 @@ STOCK_ROI_UPPER_LEFT = (0, 550)
 STOCK_ROI_BOTTOM_RIGHT = (500, 600)
 
 PLAYER1_NAME_ROI_UPPER_LEFT = (100, 0)
-PLAYER1_NAME_ROI_BOTTOM_RIGHT = (225, 40)
+PLAYER1_NAME_ROI_BOTTOM_RIGHT = (225, 25)
+
+PLAYER2_NAME_ROI_UPPER_LEFT = (735, 0)
+PLAYER2_NAME_ROI_BOTTOM_RIGHT = (858, 30)
 
 PLAYER1_STOCK_ROI_UPPER_LEFT = (25, 550)
 PLAYER1_STOCK_ROI_BOTTOM_RIGHT = (195, 600)
@@ -61,11 +63,6 @@ def main():
     # Datapoints
     num_frames = 0
     match_has_started = False
-    time_start = 0
-    char1 = ''
-    char2 = ''
-    char1_stock_count = 0
-    char2_stock_count = 0
 
 
     while True:
@@ -76,8 +73,17 @@ def main():
             num_frames += 1
             # Operations on the frame start here
 
+            # As soon as the video starts we can extract the player screen names
+            # using tesseract-OCR from the top of the frame
+            if (num_frames == 1):
+
+                player1_name = get_player_name(frame, PLAYER1_NAME_ROI_UPPER_LEFT, PLAYER1_NAME_ROI_BOTTOM_RIGHT)
+                player2_name = get_player_name(frame, PLAYER2_NAME_ROI_UPPER_LEFT, PLAYER2_NAME_ROI_BOTTOM_RIGHT)
+
+                print('Player 1 Screen Name: ' + player1_name)
+                print('Player 2 Screen Name: ' + player2_name)
+
             # Use feature matching with ORB to get start match time
-            go_feature_matches = 0
             if not match_has_started:
                 go_feature_matches = len(compute_ORB_feature_match_for_start(frame))
             else:
@@ -85,7 +91,7 @@ def main():
             if go_feature_matches > GO_FEATURE_MIN_MATCH_COUNT:
                 match_has_started = True
                 time_start = num_frames / float(fps)
-                char1_filename= compute_player_character(frame, PLAYER1_STOCK_ROI_UPPER_LEFT, PLAYER1_STOCK_ROI_BOTTOM_RIGHT, True)
+                char1_filename = compute_player_character(frame, PLAYER1_STOCK_ROI_UPPER_LEFT, PLAYER1_STOCK_ROI_BOTTOM_RIGHT, True)
                 print('Player 1 Character: ' + CHARACTER_FILENAME_TO_NAME_MAP[char1_filename])
 
                 char2_filename = compute_player_character(frame, PLAYER2_STOCK_ROI_UPPER_LEFT, PLAYER2_STOCK_ROI_BOTTOM_RIGHT)
@@ -190,6 +196,23 @@ def compute_player_character(frame, upper_left, bottom_right, use_canny = False)
                 max_match = max_val
                 max_character = filename
     return max_character
+
+def get_player_name(frame, upper_left, bottom_right):
+    config = ('-l eng --oem 1 --psm 3')
+    frame = frame[upper_left[1]: bottom_right[1], upper_left[0]: bottom_right[0]]
+
+    # Make grayscale and invert (black text on white bg) image so that tesseract-OPR can
+    # perform better
+    frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+    frame = cv2.bitwise_not(frame)
+
+    cv2.imshow('frame', frame)
+    cv2.waitKey(0)
+
+
+    text = pytesseract.image_to_string(frame, config=config)
+
+    return text
 
 
 if __name__ == "__main__":
