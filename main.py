@@ -101,15 +101,16 @@ def main():
 
 
                 print('game start time: ' + str(time_start) + 's')
-                print('FRAME\tPLAYER 1 STOCK COUNT\tPLAYER 2 STOCK COUNT')
+                print('FRAME\tGAME TIMER\tPLAYER 1 STOCK COUNT\tPLAYER 2 STOCK COUNT')
 
 
 
             # Every 10 frames analyze the frame and print statistics (stock count, in-game timer and percentage)
-            if match_has_started and num_frames % 10 == 0:
-                time = get_text_from_image(frame, GAME_TIMER_ROI_UPPER_LEFT, GAME_TIMER_ROI_BOTTOM_RIGHT)
+            if match_has_started and num_frames % 10 == 0 and num_frames <= 1930:
+                time = get_text_from_image(frame, GAME_TIMER_ROI_UPPER_LEFT, GAME_TIMER_ROI_BOTTOM_RIGHT, True)
+                time = fix_time(time)
                 char1_stock_count, char2_stock_count = compute_num_stocks('data/characters/fox-capture.png', 'data/characters/pikachu-capture.png', frame)
-                print(str(num_frames) + '\t' + str(char1_stock_count) + '\t' + str(char2_stock_count) + '\t' + time)
+                print(str(num_frames) + '\t' + time + '\t' + str(char1_stock_count) + '\t' + str(char2_stock_count) + '\t')
 
 
             cv2.imshow('frame', frame)
@@ -209,10 +210,31 @@ def get_text_from_image(frame, upper_left, bottom_right, normalize_bg = False):
     frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
     frame = cv2.bitwise_not(frame)
 
+    if normalize_bg:
+        frame = cv2.addWeighted(frame, 2, frame, 0, 10)
+
 
     text = pytesseract.image_to_string(frame, config=config)
     return text
 
+
+def fix_time(time):
+    if len(time) >= 1:
+        time = time.replace('a', '3')
+        time = time.replace('T', '7')
+        time = time.replace('O', '0')
+        time = time.replace('Q', '9')
+        time = time.replace('G', '7')
+
+
+        if time[1] != ':':
+            time = time[:1] + ':' + time[1:]
+
+        if not time.__contains__(' '):
+            time = time[:4] + ' ' + time[4:]
+        return time[:7]
+    else:
+        return 'N/A'
 
 if __name__ == "__main__":
     main()
