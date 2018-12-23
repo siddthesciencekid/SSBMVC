@@ -1,8 +1,9 @@
-
 import cv2
 import os.path
 import numpy as np
 import pytesseract
+
+from utilities import fix_time, prepare_for_OCR
 from download_yt import download_youtube_video
 
 VIDEO_FILE_NAME = 'SSBM_test.mp4'
@@ -37,6 +38,9 @@ PLAYER2_STOCK_ROI_BOTTOM_RIGHT = (425, 600)
 
 GAME_TIMER_ROI_UPPER_LEFT = (400, 55)
 GAME_TIMER_ROI_BOTTOM_RIGHT = (625, 110)
+
+PLAYER1_PERCENTAGE_ROI_UPPER_LEFT = (95, 620)
+PLAYER1_PERCENTAGE_ROI_BOTTOM_RIGHT = (200, 690)
 
 # Ignore template matching on the following image since these are just screen grabs
 # For the template matching algorithm I was able to identify the pikachu from the downloaded stock icons
@@ -101,16 +105,19 @@ def main():
 
 
                 print('game start time: ' + str(time_start) + 's')
-                print('FRAME\tGAME TIMER\tPLAYER 1 STOCK COUNT\tPLAYER 2 STOCK COUNT')
+                print('FRAME\tGAME TIMER\tPLAYER 1 STOCK COUNT\tPLAYER 2 STOCK COUNT\tPLAYER 1 PERCENTAGE')
 
 
 
             # Every 10 frames analyze the frame and print statistics (stock count, in-game timer and percentage)
+            # Match ends at around frame 1930 so we stop printing stats at that time
             if match_has_started and num_frames % 10 == 0 and num_frames <= 1930:
                 time = get_text_from_image(frame, GAME_TIMER_ROI_UPPER_LEFT, GAME_TIMER_ROI_BOTTOM_RIGHT, True)
                 time = fix_time(time)
+
+                player1_percentage = compute_dmg_percentages(frame, PLAYER1_PERCENTAGE_ROI_UPPER_LEFT, PLAYER1_PERCENTAGE_ROI_BOTTOM_RIGHT)
                 char1_stock_count, char2_stock_count = compute_num_stocks('data/characters/fox-capture.png', 'data/characters/pikachu-capture.png', frame)
-                print(str(num_frames) + '\t' + time + '\t' + str(char1_stock_count) + '\t' + str(char2_stock_count) + '\t')
+                print(str(num_frames) + '\t' + time + '\t' + str(char1_stock_count) + '\t' + str(char2_stock_count) + '\t' + player1_percentage)
 
 
             cv2.imshow('frame', frame)
@@ -202,7 +209,7 @@ def compute_player_character(frame, upper_left, bottom_right, use_canny = False)
     return max_character
 
 def get_text_from_image(frame, upper_left, bottom_right, normalize_bg = False):
-    config = ('-l eng --oem 1 --psm 3')
+    config = ('-l eng --oem 1 --psm 8')
     frame = frame[upper_left[1]: bottom_right[1], upper_left[0]: bottom_right[0]]
 
     # Make grayscale and invert (black text on white bg) image so that tesseract-OPR can
@@ -211,30 +218,29 @@ def get_text_from_image(frame, upper_left, bottom_right, normalize_bg = False):
     frame = cv2.bitwise_not(frame)
 
     if normalize_bg:
-        frame = cv2.addWeighted(frame, 2, frame, 0, 10)
+        frame = cv2.multiply(frame, 1.5)
+        frame = prepare_for_OCR(frame)
 
 
     text = pytesseract.image_to_string(frame, config=config)
     return text
 
+def compute_dmg_percentages(frame, upper_left, bottom_right):
+    config = ('-l eng --oem 1 --psm 3')
+    frame = frame[upper_left[1]: bottom_right[1], upper_left[0]: bottom_right[0]]
 
-def fix_time(time):
-    if len(time) >= 1:
-        time = time.replace('a', '3')
-        time = time.replace('T', '7')
-        time = time.replace('O', '0')
-        time = time.replace('Q', '9')
-        time = time.replace('G', '7')
+    # Make grayscale and invert (black text on white bg) image so that tesseract-OPR can
+    # perform better
+    frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+    frame = cv2.bitwise_not(frame)
+    frame = cv2.multiply(frame, 4)
+    frame = prepare_for_OCR(frame)
 
+    cv2.imshow('frame', frame)
+    cv2.waitKey(0)
 
-        if time[1] != ':':
-            time = time[:1] + ':' + time[1:]
-
-        if not time.__contains__(' '):
-            time = time[:4] + ' ' + time[4:]
-        return time[:7]
-    else:
-        return 'N/A'
+    text = pytesseract.image_to_string(frame, config=config)
+    return text
 
 if __name__ == "__main__":
     main()
