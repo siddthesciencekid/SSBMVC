@@ -3,17 +3,21 @@ import os.path
 import numpy as np
 import pytesseract
 
-from utilities import fix_time, prepare_for_OCR
+# Import helper functions
+from utilities import fix_time, get_text_from_image, get_percentage, prepare_for_OCR
 from download_yt import download_youtube_video
+
 
 VIDEO_FILE_NAME = 'SSBM_test.mp4'
 
-orb = cv2.ORB_create()
+# For feature matching we will use ORB
+ORB = cv2.ORB_create()
 
 
-# GO_MATCHING
+# To figure out the match start time we will use
+# feature matching with this template
 GO_TEMPLATE = cv2.imread('data/GO.jpg', 1)
-kp1, des1 = orb.detectAndCompute(GO_TEMPLATE, None)
+kp1, des1 = ORB.detectAndCompute(GO_TEMPLATE, None)
 GO_FEATURE_MIN_MATCH_COUNT = 2
 
 
@@ -27,8 +31,8 @@ STOCK_ROI_BOTTOM_RIGHT = (500, 600)
 PLAYER1_NAME_ROI_UPPER_LEFT = (100, 0)
 PLAYER1_NAME_ROI_BOTTOM_RIGHT = (225, 27)
 
-PLAYER2_NAME_ROI_UPPER_LEFT = (735, 0)
-PLAYER2_NAME_ROI_BOTTOM_RIGHT = (858, 27)
+PLAYER2_NAME_ROI_UPPER_LEFT = (744, 0)
+PLAYER2_NAME_ROI_BOTTOM_RIGHT = (854, 23)
 
 PLAYER1_STOCK_ROI_UPPER_LEFT = (25, 550)
 PLAYER1_STOCK_ROI_BOTTOM_RIGHT = (195, 600)
@@ -42,6 +46,9 @@ GAME_TIMER_ROI_BOTTOM_RIGHT = (625, 110)
 PLAYER1_PERCENTAGE_ROI_UPPER_LEFT = (95, 620)
 PLAYER1_PERCENTAGE_ROI_BOTTOM_RIGHT = (200, 690)
 
+PLAYER2_PERCENTAGE_ROI_UPPER_LEFT = (320, 620)
+PLAYER2_PERCENTAGE_ROI_BOTTOM_RIGHT = (420, 690)
+
 # Ignore template matching on the following image since these are just screen grabs
 # For the template matching algorithm I was able to identify the pikachu from the downloaded stock icons
 # Recognizing fox however was much trickier.
@@ -54,6 +61,10 @@ IGNORE_FILENAMES = ['fox-capture.PNG', 'pikachu-capture.PNG']
 # Character File Name mapped to Character Variant Names
 # In a full version we would have all the mappings here :)
 CHARACTER_FILENAME_TO_NAME_MAP = {'fox-green.png': 'Green Fox', 'pikachu-blue.png': 'Blue Party Hat Pikachu'}
+
+# Setting this variable to True will cause the program to display the video
+# in a separate frame as the analysis is being performed
+PLAY_VIDEO = True
 
 def main():
 
@@ -105,24 +116,40 @@ def main():
 
 
                 print('game start time: ' + str(time_start) + 's')
-                print('FRAME\tGAME TIMER\tPLAYER 1 STOCK COUNT\tPLAYER 2 STOCK COUNT\tPLAYER 1 PERCENTAGE')
+                print('FRAME\tGAME TIMER\tPLAYER 1 STOCK COUNT\tPLAYER 2 STOCK COUNT\tPLAYER 1 PERCENTAGE\tPLAYER 2 PERCENTAGE')
 
 
 
             # Every 10 frames analyze the frame and print statistics (stock count, in-game timer and percentage)
             # Match ends at around frame 1930 so we stop printing stats at that time
             if match_has_started and num_frames % 10 == 0 and num_frames <= 1930:
+                # Get the time from the timer ROI and fix as needed
                 time = get_text_from_image(frame, GAME_TIMER_ROI_UPPER_LEFT, GAME_TIMER_ROI_BOTTOM_RIGHT, True)
                 time = fix_time(time)
 
-                player1_percentage = compute_dmg_percentages(frame, PLAYER1_PERCENTAGE_ROI_UPPER_LEFT, PLAYER1_PERCENTAGE_ROI_BOTTOM_RIGHT)
-                char1_stock_count, char2_stock_count = compute_num_stocks('data/characters/fox-capture.png', 'data/characters/pikachu-capture.png', frame)
-                print(str(num_frames) + '\t' + time + '\t' + str(char1_stock_count) + '\t' + str(char2_stock_count) + '\t' + player1_percentage)
+                # Get the damage percentages from the respective ROIs and fix as needed
+                player1_percentage = compute_dmg_percentages(frame, PLAYER1_PERCENTAGE_ROI_UPPER_LEFT,
+                                                             PLAYER1_PERCENTAGE_ROI_BOTTOM_RIGHT)
+                player2_percentage = compute_dmg_percentages(frame, PLAYER2_PERCENTAGE_ROI_UPPER_LEFT,
+                                                             PLAYER2_PERCENTAGE_ROI_BOTTOM_RIGHT)
 
+                player1_percentage = get_percentage(player1_percentage)
+                player2_percentage = get_percentage(player2_percentage)
 
-            cv2.imshow('frame', frame)
-            if cv2.waitKey(2) & 0xFF == ord('q'):
-                break
+                # Compute the number of stocks each player has
+                char1_stock_count, char2_stock_count = compute_num_stocks('data/characters/fox-capture.png',
+                                                                          'data/characters/pikachu-capture.png', frame)
+
+                # Print all the stats to the console
+                print(str(num_frames) + '\t' + time + '\t' + str(char1_stock_count) + '\t' + str(char2_stock_count) +
+                      '\t' + player1_percentage + '\t' + player2_percentage)
+
+            # Show the video as the analysis is being performed
+
+            if PLAY_VIDEO:
+                cv2.imshow('frame', frame)
+                if cv2.waitKey(2) & 0xFF == ord('q'):
+                    break
         else:
             break
     # When everything done, release the capture
@@ -131,10 +158,14 @@ def main():
 
 
 
-
+# Uses ORB to perform feature matching and returns the
+# number of key matches found between the GO template
+# and the frame.
+# Using training data, it appears the min distance of 10 occurs when GO
+# first appears on the screen
 def compute_ORB_feature_match_for_start(frame):
     # find the keypoints and descriptors with ORB
-    kp2, des2 = orb.detectAndCompute(frame, None)
+    kp2, des2 = ORB.detectAndCompute(frame, None)
     bf = cv2.BFMatcher(cv2.NORM_HAMMING, crossCheck=True)
     matches = bf.match(des1, des2)
     matches = sorted(matches, key=lambda x: x.distance)
@@ -146,9 +177,12 @@ def compute_ORB_feature_match_for_start(frame):
             good.append([m])
     return good
 
+# Uses template matching to compute the number of stocks each player has
 def compute_num_stocks(player1_stock_image, player2_stock_image, frame):
+    # Select the area of the frame that has the player stock information
     frame = frame[STOCK_ROI_UPPER_LEFT [1]: STOCK_ROI_BOTTOM_RIGHT[1], STOCK_ROI_UPPER_LEFT [0]: STOCK_ROI_BOTTOM_RIGHT[0]]
 
+    # Read the character stock template images and grayscale them
     character_template1 = cv2.imread(player1_stock_image, 1)
     character_template1 = cv2.cvtColor(character_template1, cv2.COLOR_BGR2GRAY)
     w1, h1 = character_template1.shape[::-1]
@@ -158,6 +192,7 @@ def compute_num_stocks(player1_stock_image, player2_stock_image, frame):
 
     frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
 
+    # Perform the template matching for each character
     res1 = cv2.matchTemplate(frame, character_template1, cv2.TM_CCOEFF_NORMED)
     res2 = cv2.matchTemplate(frame, character_template2, cv2.TM_CCOEFF_NORMED)
 
@@ -168,6 +203,8 @@ def compute_num_stocks(player1_stock_image, player2_stock_image, frame):
     loc1 = np.where(res1 >= threshold)
     loc2 = np.where(res2 >= threshold)
 
+    # Sensitivity allows us to determine the number of unique matches
+    # and thus the number of stocks
     player1_found = set()
     player2_found = set()
     sensitivity = (w2 * 2) - 1
@@ -180,6 +217,11 @@ def compute_num_stocks(player1_stock_image, player2_stock_image, frame):
 
     return len(player1_found), len(player2_found)
 
+# Compute the player character by performing template matching against
+# all player stock icons. Those icons which match the best are deemed to be the player
+# character and character variant. Uses two different methodologies to perform the analysis
+
+# One way is to use pure template matching and the other is to use edge detection
 def compute_player_character(frame, upper_left, bottom_right, use_canny = False):
     frame = frame[upper_left[1]: bottom_right[1], upper_left[0]: bottom_right[0]]
 
@@ -189,8 +231,11 @@ def compute_player_character(frame, upper_left, bottom_right, use_canny = False)
     max_match = 0
     max_character = ''
     # Once the match starts we can use the current frame to determine the characters being played
+    # Loop through all character stock icons to determine which one is the best fit
     for filename in os.listdir('data/characters'):
         if not IGNORE_FILENAMES.__contains__(filename):
+
+            # Read in the character stock icon and resize and blur to fit the frame/aspect ration
             character_template = cv2.imread('data/characters/' + filename, 1)
             character_template = cv2.resize(character_template, (0, 0), fx=1.41, fy=1.41)
             character_template = cv2.blur(character_template, (6, 6))
@@ -198,8 +243,7 @@ def compute_player_character(frame, upper_left, bottom_right, use_canny = False)
             if use_canny:
                 character_template = cv2.Canny(character_template, 50, 200)
 
-
-
+            # Perform the template matching and determine if it exceeds the max value thus far
             res = cv2.matchTemplate(frame, character_template, cv2.TM_CCOEFF_NORMED)
 
             min_val, max_val, min_loc, max_loc = cv2.minMaxLoc(res)
@@ -208,23 +252,7 @@ def compute_player_character(frame, upper_left, bottom_right, use_canny = False)
                 max_character = filename
     return max_character
 
-def get_text_from_image(frame, upper_left, bottom_right, normalize_bg = False):
-    config = ('-l eng --oem 1 --psm 8')
-    frame = frame[upper_left[1]: bottom_right[1], upper_left[0]: bottom_right[0]]
-
-    # Make grayscale and invert (black text on white bg) image so that tesseract-OPR can
-    # perform better
-    frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-    frame = cv2.bitwise_not(frame)
-
-    if normalize_bg:
-        frame = cv2.multiply(frame, 1.5)
-        frame = prepare_for_OCR(frame)
-
-
-    text = pytesseract.image_to_string(frame, config=config)
-    return text
-
+# Computes the damage percentage given a player damage percentage ROI
 def compute_dmg_percentages(frame, upper_left, bottom_right):
     config = ('-l eng --oem 1 --psm 3')
     frame = frame[upper_left[1]: bottom_right[1], upper_left[0]: bottom_right[0]]
@@ -235,9 +263,6 @@ def compute_dmg_percentages(frame, upper_left, bottom_right):
     frame = cv2.bitwise_not(frame)
     frame = cv2.multiply(frame, 4)
     frame = prepare_for_OCR(frame)
-
-    cv2.imshow('frame', frame)
-    cv2.waitKey(0)
 
     text = pytesseract.image_to_string(frame, config=config)
     return text
