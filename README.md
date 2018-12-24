@@ -31,5 +31,5 @@ For installation instructions see [here](https://github.com/tesseract-ocr/tesser
 ## Running the program
 
 After you have all the dependencies installed you should be able
-to run main.py. It will download the clip and start running the CV algorithms
+to run main.py. It will download the clip and start running the CV algorithms and print stats
 to the console.
